@@ -137,37 +137,41 @@ def prepare_labels(label):
 # 按照论文计算损失函数和准确率
 def loss_accuracy(D_real_features, D_real_logit, D_real_prob, D_fake_features,
                   D_fake_logit, D_fake_prob, extended_label, labeled_mask):
+    # 避免损失函数变为nan
     epsilon = 1e-8 # used to avoid NAN loss
     # *** 鉴别器Loss***
     # 监督学习Loss
-    # 真实数据属于哪一类
+    # 二元交叉熵损失函数D_L_supervised，这是针对前K类而言的
     tmp = tf.nn.softmax_cross_entropy_with_logits(logits = D_real_logit,
                                                   labels = extended_label)
-    D_L_supervised = tf.reduce_sum(labeled_mask * tmp) / tf.reduce_sum(labeled_mask) #忽略没打标签的数据
+    D_L_supervised = tf.reduce_sum(labeled_mask * tmp) / tf.reduce_sum(labeled_mask)
     # 无监督学习Loss
-    # 数据是真的
+    # 真实数据为真的概率
     prob_real_be_real = 1 - D_real_prob[:, -1] + epsilon
     tmp_log = tf.log(prob_real_be_real)
     D_L_unsupervised1 = -1 * tf.reduce_mean(tmp_log)
-    # 数据是假的
+    # 假数据为假的概率
     prob_fake_be_fake = D_fake_prob[:, -1] + epsilon
     tmp_log = tf.log(prob_fake_be_fake)
     D_L_unsupervised2 = -1 * tf.reduce_mean(tmp_log)
+    # 鉴别器损失函数
     D_L = D_L_supervised + D_L_unsupervised1 + D_L_unsupervised2
     # ***生成器Loss***
-    # fake data is mistaken to be real
+    # 假的看成真的概率
     prob_fake_be_real = 1 - D_fake_prob[:, -1] + epsilon
     tmp_log =  tf.log(prob_fake_be_real)
     G_L1 = -1 * tf.reduce_mean(tmp_log)
-    # Feature Maching
+    # 特征的匹配损失函数，相当于Encode-Decoder网络中的特征向量的差距损失
     tmp1 = tf.reduce_mean(D_real_features, axis = 0)
     tmp2 = tf.reduce_mean(D_fake_features, axis = 0)
     G_L2 = tf.reduce_mean(tf.square(tmp1 - tmp2))
+    # 生成器的损失
     G_L = G_L1 + G_L2
-    # accuracy
+    # 计算准确率
     correct_prediction = tf.equal(tf.argmax(D_real_prob[:, :-1], 1),
                                   tf.argmax(extended_label[:, :-1], 1))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
+    # 返回上面的值
     return D_L_supervised, D_L_unsupervised1, D_L_unsupervised2, D_L, G_L, accuracy
 
 # 定义优化器
@@ -206,7 +210,7 @@ def save_model_on_imporvemnet(file_path, sess, cv_acc, cv_accs):
         print('Model saved')
     print('')
 
-# 生成label_mask
+# 生成label_mask, 只有占比前labeled_rate可以作为真实样本输入到网络
 def get_labled_mask(labeled_rate, batch_size):
     # get labeled mask to mask some data unlabeled
     labeled_mask = np.zeros([batch_size], dtype = np.float32)
@@ -215,7 +219,7 @@ def get_labled_mask(labeled_rate, batch_size):
     #np.random.shuffle(labeled_mask)
     return labeled_mask
 
-#
+# 'a' 代表给文件追加信息
 def log_loss_acc(file_path, epoch, train_loss_D, train_loss_G, train_Acc,
                  cv_loss_D, cv_loss_G, cv_Acc, log_mode = 'a'):
     # log train and cv losses as well as accuracy
@@ -228,60 +232,64 @@ def log_loss_acc(file_path, epoch, train_loss_D, train_loss_G, train_Acc,
         line = '%d, %f, %f, %f, %f, %f, %f\n' %(epoch, train_loss_D, train_loss_G, train_Acc, cv_loss_D, cv_loss_G, cv_Acc)
         f.write(line)
 
-        def log_loss_acc(file_path, epoch, train_loss_D, train_loss_G, train_Acc,
-                         cv_loss_D, cv_loss_G, cv_Acc, log_mode='a'):
-            # log train and cv losses as well as accuracy
-            mode = log_mode if epoch == 0 else 'a'
-
-            with open(file_path, mode) as f:
-                if mode == 'w':
-                    header = 'epoch, train_loss_D, train_loss_G,' \
-                             'train_Acc, cv_loss_D, cv_loss_G, cv_Acc\n'
-                    f.write(header)
-
-                line = '%d, %f, %f, %f, %f, %f, %f\n' % (epoch, train_loss_D, train_loss_G, train_Acc,
-                                                         cv_loss_D, cv_loss_G, cv_Acc)
-                f.write(line)
-
 # 训练SGAN
 def train_SS_GAN(batch_size, epochs):
     # train Semi-Supervised Learning GAN
     train_D_losses, train_G_losses, train_Accs = [], [], []
     cv_D_losses, cv_G_losses, cv_Accs = [], [], []
 
+    # 重置default graph
     tf.reset_default_graph()
-
+    # 输入数据占位
     x = tf.placeholder(tf.float32, name = 'x', shape = [None, x_height, x_width, num_channels])
+    # 标签占位符
     label = tf.placeholder(tf.float32, name = 'label', shape = [None, num_classes])
+    # label_mask占位
     labeled_mask = tf.placeholder(tf.float32, name = 'labeled_mask', shape = [None])
+    # 图像编码隐空间长度
     z = tf.placeholder(tf.float32, name = 'z', shape = [None, latent_size])
+    # dropout的概率
     dropout_rate = tf.placeholder(tf.float32, name = 'dropout_rate')
+    # 控制是否训练的参数
     is_training = tf.placeholder(tf.bool, name = 'is_training')
+    # 生成器的学习率
     G_learning_rate = tf.placeholder(tf.float32, name = 'G_learning_rate')
+    # 判别器的学习率
     D_learning_rate = tf.placeholder(tf.float32, name = 'D_learning_rate')
-
+    # 创建SSGAN模型
     model = build_model(x, z, label, dropout_rate, is_training, print_summary = True)
     D_real_features, D_real_logit, D_real_prob, D_fake_features, D_fake_logit, D_fake_prob, fake_data = model
+    # 输入的标签都为真，所以表示为[i, 0]，i代表第i(0-9)类，0用prepare_label拼接上去
     extended_label = prepare_labels(label)
+    # 计算损失函数和准确率并复制
     loss_acc  = loss_accuracy(D_real_features, D_real_logit, D_real_prob,
                               D_fake_features, D_fake_logit, D_fake_prob,
                               extended_label, labeled_mask)
     _, _, _, D_L, G_L, accuracy = loss_acc
+    # 定义生成器和鉴别器的优化器
     D_optimizer, G_optimizer = optimizer(D_L, G_L, G_learning_rate, D_learning_rate)
 
     print('training....')
 
     with tf.Session() as sess:
+        # 初始化变量
         sess.run(tf.global_variables_initializer())
+        # 获得数据
         mnist_set = get_data()
-
+        # epochs次循环
         for epoch in range(epochs):
             t_total = 0
+            # 一个epoch需要这么多轮，根据batch_size计算
             for iter in range(int(mnist_set.train.images.shape[0] / batch_size) + 1):
+                # 记录时间
                 t_start = time.time()
+                # 获得训练数据的一个batch的数据，这里将shuffle设为false,代表从数据集中依次取batch张图片
                 batch = mnist_set.train.next_batch(batch_size, shuffle = False)
+                # 申请一个shape为[batch_size, latent_size]的隐变量z
                 batch_z = np.random.uniform(-1.0, 1.0, size = (batch_size, latent_size))
+                # 生成labeled_mask
                 mask = get_labled_mask(labeled_rate, batch_size)
+                # 训练参数
                 train_feed_dictionary = {x:  normalize(batch[0]),
                                          z: batch_z,
                                          label: batch[1],
@@ -290,10 +298,10 @@ def train_SS_GAN(batch_size, epochs):
                                          G_learning_rate: 1e-5,
                                          D_learning_rate: 1e-5,
                                          is_training: True}
-
+                # 开始训练
                 D_optimizer.run(feed_dict = train_feed_dictionary)
                 G_optimizer.run(feed_dict = train_feed_dictionary)
-
+                # 获取D_loss, G_loss, Acc
                 train_D_loss = D_L.eval(feed_dict = train_feed_dictionary)
                 train_G_loss = G_L.eval(feed_dict = train_feed_dictionary)
                 train_accuracy = accuracy.eval(feed_dict = train_feed_dictionary)
@@ -303,13 +311,17 @@ def train_SS_GAN(batch_size, epochs):
                       'train_D_loss: %f, train_acc: %f' %(epoch, t_total,
                                                           train_G_loss, train_D_loss,
                                                           train_accuracy), end = '\r')
+            # 将每个epoch的train_D_loss, train_G_loss, train_accuracy加入到列表中
             train_D_losses.append(train_D_loss)
             train_G_losses.append(train_G_loss)
             train_Accs.append(train_accuracy)
 
-            # Cross-Validation
+            # 交叉验证
+            # 交叉验证数据
             cv_size = mnist_set.test.labels.shape[0]
+            # 交叉验证噪声向量cv_batch_z
             cv_batch_z = np.random.uniform(-1.0, 1.0, size = (cv_size, latent_size))
+            # 同样生成交叉验证数据的labeled_mask
             mask = get_labled_mask(1, cv_size)
             cv_feed_dictionary = {x: normalize(mnist_set.test.images),
                                   z: cv_batch_z,
@@ -317,11 +329,11 @@ def train_SS_GAN(batch_size, epochs):
                                   labeled_mask: mask,
                                   dropout_rate: 0.0,
                                   is_training: False}
-
+            # 获取交叉验证集合的D_loss, G_loss, Acc
             cv_D_loss = D_L.eval(feed_dict = cv_feed_dictionary)
             cv_G_loss = G_L.eval(feed_dict = cv_feed_dictionary)
             cv_accuracy = accuracy.eval(feed_dict = cv_feed_dictionary)
-
+            #
             log_loss_acc(log_path, epoch, train_D_loss, train_G_loss, train_accuracy,
                          cv_D_loss, cv_G_loss, cv_accuracy, log_mode = 'w')
             print('\ncv_G_Loss: %f, cv_D_loss: %f, cv_acc: %f' %(cv_G_loss,
