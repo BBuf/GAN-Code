@@ -14,3 +14,8 @@
   ```
 
 - DCGAN_face.py 使用Tensorflow实现DCGAN生成人脸，数据集的格式为：[数据集](image/GAN_face_data.jpg) ，细节可以查看：https://blog.csdn.net/just_sort/article/details/84581400
+
+- SGAN.pdf 《Semi-Supervised Learning with Generative Adversarial Networks》论文
+
+- SGAN.py SGAN的tensorflow实现，细节可以查看：https://blog.csdn.net/just_sort/article/details/90605197
+
