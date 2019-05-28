@@ -15,7 +15,7 @@ LOGDIR = "logdir"
 
 # 定义超参数
 real_img_size = mnist.train.images[0].shape[0]
-noize_size = 100
+noise_size = 100
 noise = 'normal0-1'
 learning_rate = 0.001
 batch_size = 100
@@ -123,10 +123,7 @@ def Save_lossValue(e, epochs, train_loss_d, train_loss_d_real, train_loss_d_fake
 tf.reset_default_graph()
 
 real_img, noise_img, real_img_digit = get_inputs(real_img_size, noise_size)
-# 生成器
-g_logits, g_outputs = get_generator(real_img_digit, noise_img)
-sample_images = tf.reshape(g_outputs, [-1, 28, 28, 1])
-tf.summary.image("sample_images", sample_images, 10) #10代表要生成图像的最大批处理元素数
+
 # 生成器
 g_logits, g_outputs = get_generator(real_img_digit, noise_img)
 sample_images = tf.reshape(g_outputs, [-1, 28, 28, 1])
@@ -216,4 +213,4 @@ def test():
             plt.show()
 
 if __name__ == '__main__':
-    test()
+    train()
