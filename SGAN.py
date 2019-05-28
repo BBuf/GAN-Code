@@ -20,18 +20,19 @@ model_path = './SS_GAN_model.ckpt'
 # 数据准备
 def normalize(x):
     x = (x - 127.5) / 127.5
-    return x.reshape((-1, x_heigh, x_width, 1))
+    return x.reshape((-1, x_height, x_width, 1))
 
 def get_data():
     mnist_data = input_data.read_data_sets("MNIST", one_hot=True)
     return mnist_data
 # 定义鉴别器结构
-def D(x, dropout_rate, is_training = True, print_summary=True):
-    #discriminator (x -> n+1 class)
+def D(x, dropout_rate, is_training, reuse = True, print_summary = True):
+    # discriminator (x -> n + 1 class)
     with tf.variable_scope('Discriminator', reuse=reuse) as scope:
         #鉴别器的第一层不使用BN
         conv1 = tf.layers.conv2d(x, 32, [5, 5], strides=[2, 2], padding='same')
         lrelu1 = tf.maximum(0.2 * conv1, conv1) #leaky relu
+        dropout1 = tf.layers.dropout(lrelu1, dropout_rate)
         # layer2
         conv2 = tf.layers.conv2d(dropout1, 64, [3, 3],
                                  strides=[2, 2],
