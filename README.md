@@ -37,3 +37,9 @@
 
 ![](image/CGAN_fashion_mnist_13000.png)
 
+- CycleGAN.pdf CycleGAN论文原文。
+
+- CycleGAN.py 用于风格迁移，两个模式相互转换，例如将马和斑马相互转换：
+
+![](image/horse2zebra.png)
+
