@@ -43,3 +43,5 @@
 
 ![](image/horse2zebra.png)
 
+- BEGAN.pdf BEGAN论文原文。
+- BEGAN代码：https://github.com/artcg/BEGAN ，原理可以参考：https://blog.csdn.net/just_sort/article/details/90740256
